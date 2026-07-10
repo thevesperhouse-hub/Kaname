@@ -1,0 +1,27 @@
+# ~150M non-embedding at d_model 768 x 12 layers; embedding stays 100k vocab.
+vocab_size: 100000
+d_model: 768
+n_layers: 12
+n_heads: 12
+ffn_mult: 4.0
+dropout: 0.0
+rope_theta: 10000.0
+
+segment_size: 512
+k_max: 16
+k_process: 4
+k_skim: 1
+n_compress_layers: 2
+max_memory_slots: 512
+gate_beta: 4.0
+
+router_tau_start: 1.0
+router_tau_end: 0.1
+router_tau_steps: 50000
+target_route_dist: [0.6, 0.3, 0.1]
+
+lambda_compute: 0.01
+lambda_balance: 0.01
+lambda_entropy: 0.001
+
+max_seq_len: 2048

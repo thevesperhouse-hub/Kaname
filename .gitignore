@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+outputs/
+logs/
+data/*.bin
+*.pt
+*.ckpt
+wandb/
+.DS_Store

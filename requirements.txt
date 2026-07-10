@@ -1,0 +1,14 @@
+# Pinned to the exact set verified working together (Python 3.12, 2026-07).
+# torch is installed separately (CUDA build) in setup_lambda.sh.
+datasets==5.0.0
+huggingface_hub==1.23.0
+hf-xet==1.5.1
+transformers==5.13.0
+tokenizers==0.22.2
+sentencepiece==0.2.1
+numpy==2.5.1
+pyarrow==25.0.0
+safetensors==0.8.0
+pyyaml==6.0.3
+rich==15.0.0
+pyfiglet==1.0.4

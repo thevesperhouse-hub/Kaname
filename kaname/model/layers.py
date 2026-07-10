@@ -104,30 +104,26 @@ class MemoryAttention(nn.Module):
         q = apply_rope(q, cos, sin)
         k = apply_rope(k, cos, sin)
 
+        p = self.drop.p if self.training else 0.0
+
         if memory is not None and memory.shape[1] > 0:
             M = memory.shape[1]
             mk = self.k_norm(self._shape(self.k_proj(memory), B, M))   # no rope on memory
             mv = self._shape(self.v_proj(memory), B, M)
             k = torch.cat([mk, k], dim=2)                             # (B,H,M+T,hd)
             v = torch.cat([mv, v], dim=2)
+
+            # additive float mask (B,1,T,M+T): memory cols carry the soft gate log-bias
+            # (fully visible), local cols are causal. SDPA consumes this and runs a fused
+            # (cuDNN / mem-efficient) kernel instead of a hand-rolled softmax.
+            mask = torch.zeros(B, 1, T, M + T, dtype=q.dtype, device=x.device)
+            mask[..., M:] = torch.triu(
+                torch.full((T, T), float("-inf"), dtype=q.dtype, device=x.device), diagonal=1)
+            if mem_gate is not None:
+                mask[..., :M] += torch.log(mem_gate.clamp(min=1e-6))[:, None, None, :]
+            out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=p)
         else:
-            M = 0
+            out = F.scaled_dot_product_attention(q, k, v, is_causal=True, dropout_p=p)
 
-        attn = torch.matmul(q, k.transpose(-2, -1)) * self.scale     # (B,H,T,M+T)
-
-        # local (last T columns) causal mask
-        causal = torch.ones(T, T, device=x.device, dtype=torch.bool).tril()
-        col_mask = torch.ones(T, M + T, device=x.device, dtype=torch.bool)
-        col_mask[:, M:] = causal
-        attn = attn.masked_fill(~col_mask[None, None], float("-inf"))
-
-        # soft per-slot memory gate -> additive log-bias so low-gate slots fade out
-        if M > 0 and mem_gate is not None:
-            bias = torch.log(mem_gate.clamp(min=1e-6))                # (B, M)
-            attn[..., :M] = attn[..., :M] + bias[:, None, None, :]
-
-        attn = F.softmax(attn, dim=-1)
-        attn = self.drop(attn)
-        out = torch.matmul(attn, v)                                  # (B,H,T,hd)
         out = out.transpose(1, 2).contiguous().view(B, T, D)
         return self.out_proj(out)

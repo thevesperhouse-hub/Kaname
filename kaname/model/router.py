@@ -46,8 +46,8 @@ class SegmentScanner(nn.Module):
         q = self.q_proj(self.query).expand(B, -1).view(B, 1, H, hd).transpose(1, 2)
         k = self.k_proj(seg).view(B, W, H, hd).transpose(1, 2)
         v = self.v_proj(seg).view(B, W, H, hd).transpose(1, 2)
-        attn = F.softmax((q @ k.transpose(-2, -1)) * self.scale, dim=-1)
-        summary = self.out_proj((attn @ v).transpose(1, 2).reshape(B, D))
+        o = F.scaled_dot_product_attention(q, k, v)   # (B,H,1,hd)
+        summary = self.out_proj(o.transpose(1, 2).reshape(B, D))
         out = self.head(self.norm(summary))
         return out[:, :3], torch.sigmoid(out[:, 3])   # route_logits (B,3), write_priority (B,)
 

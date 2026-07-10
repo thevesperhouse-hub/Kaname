@@ -95,6 +95,9 @@ def run():
     use_velvet = Confirm.ask(f"[{C.mint}]Velvet optimizer ?[/]", default=True)
     run_name = Prompt.ask(f"[{C.mint}]run name[/]", default=f"kaname_{preset}")
     save_every = IntPrompt.ask(f"[{C.mint}]checkpoint every (0=off)[/]", default=0)
+    # perf levers (see README): compile fuses kernels; grad-ckpt trades compute for VRAM.
+    do_compile = Confirm.ask(f"[{C.mint}]torch.compile ? (faster, slow 1st steps)[/]", default=tot > 3e8)
+    grad_ckpt = Confirm.ask(f"[{C.mint}]grad checkpointing ? (only if OOM)[/]", default=tot > 8e8)
 
     # ---- build dataset ----
     if ds_kind == "fineweb":
@@ -122,7 +125,7 @@ def run():
         model, cfg, train_ds, batch_size=batch, grad_accum=accum, max_steps=steps,
         warmup_steps=warmup, device=device, use_velvet=use_velvet, run_name=run_name,
         num_workers=nw, save_every=save_every, ckpt_dir=f"outputs/{run_name}",
-        grad_checkpoint=(tot > 4e8),   # auto-enable for big models
+        grad_checkpoint=grad_ckpt, compile=do_compile,
     ).train()
 
 

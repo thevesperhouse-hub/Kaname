@@ -100,6 +100,21 @@ activation checkpointing (`--grad-checkpoint`, needed to fit 1.3B with a decent
 batch), and `--compile`. Single H100-80GB is enough for 1.3B; multi-GPU DDP is a
 follow-up (the streaming dataset is already rank/worker shard-aware).
 
+## Performance
+
+Attention uses `F.scaled_dot_product_attention` (FlashAttention / cuDNN on a Linux
+CUDA build; a fused fallback elsewhere) — not a hand-rolled softmax. Two more levers:
+
+- **`--compile`** (torch.compile): big win via kernel fusion. First steps are slow
+  (compilation); because `seq_len` is fixed the memory only takes a few shapes, so it
+  compiles a handful of graphs once, then runs fast. Recommended on.
+- **`--grad-checkpoint`**: recomputes each segment's forward in backward (~+33% compute)
+  to save activation memory. With SDPA freeing memory, prefer it **off**; enable only if
+  you OOM. On Lambda: `COMPILE=1 GC=0 bash scripts/run_lambda.sh` (drop batch if OOM).
+
+Baseline first run was ~14% MFU (hand-rolled attention, no compile, grad-checkpoint on);
+these close most of that gap.
+
 ## Evaluating Velvet honestly
 
 `--no-velvet` gives an AdamW baseline from the *same* optimizer class. To claim a win,

@@ -45,8 +45,7 @@ class _CrossAttn(nn.Module):
         kv = self.norm_kv(kv_in)
         k = self.k_norm(self.k_proj(kv).view(B, W, H, hd)).transpose(1, 2)
         v = self.v_proj(kv).view(B, W, H, hd).transpose(1, 2)
-        attn = F.softmax((q @ k.transpose(-2, -1)) * self.scale, dim=-1)
-        out = (attn @ v).transpose(1, 2).reshape(B, K, D)
+        out = F.scaled_dot_product_attention(q, k, v).transpose(1, 2).reshape(B, K, D)
         x = q_in + self.out_proj(out)
         return x + self.ffn(self.ffn_norm(x))
 

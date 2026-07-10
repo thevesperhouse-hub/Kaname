@@ -23,6 +23,10 @@ RESUME=${RESUME:-}
 mkdir -p logs "outputs/$RUN"
 RESUME_ARG=""; [ -n "$RESUME" ] && RESUME_ARG="--resume $RESUME"
 TUI_ARG="--no-tui"; [ "${TUI:-0}" = "1" ] && TUI_ARG=""
+# perf: COMPILE=1 fuses kernels (big win, slow first steps). GC=1 enables gradient
+# checkpointing (trades ~33% compute for VRAM) — only if you OOM without it.
+COMPILE_ARG=""; [ "${COMPILE:-1}" = "1" ] && COMPILE_ARG="--compile"
+GC_ARG="";      [ "${GC:-0}" = "1" ]      && GC_ARG="--grad-checkpoint"
 
 CMD=(python scripts/train.py
   --config "$CONFIG"
@@ -31,7 +35,7 @@ CMD=(python scripts/train.py
   --seq-len "$SEQ" --batch-size "$BATCH" --grad-accum "$ACCUM"
   --max-steps "$STEPS" --warmup 2000 --lr 3e-4 --min-lr 3e-5
   --num-workers "$WORKERS" --shuffle-buffer 10000
-  --grad-checkpoint
+  $COMPILE_ARG $GC_ARG
   --ckpt-dir "outputs/$RUN" --save-every 1000 --keep-last-n 5
   --run-name "$RUN" $RESUME_ARG $TUI_ARG)
 

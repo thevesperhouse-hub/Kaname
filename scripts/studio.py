@@ -10,6 +10,9 @@ live training dashboard.
 import sys, os, platform
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# cut CUDA fragmentation OOMs (must be set before torch inits the allocator)
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import torch
 from rich.console import Console
 from rich.prompt import Prompt, IntPrompt, Confirm

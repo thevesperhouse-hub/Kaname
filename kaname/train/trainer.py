@@ -111,7 +111,10 @@ class Trainer:
         vocab = self.cfg.vocab_size
         tokens_per_step = self.batch_size * self.grad_accum * self.cfg.max_seq_len
 
-        with TrainingDashboard(self.max_steps, self.run_name, enabled=self.tui) as dash:
+        # tui=True auto-detects a TTY (live dashboard) vs a pipe/nohup (plain logs);
+        # tui=False forces plain logs regardless.
+        enabled = None if self.tui else False
+        with TrainingDashboard(self.max_steps, self.run_name, enabled=enabled) as dash:
             if self.start_step:
                 dash.log(f"resumed at step {self.start_step}", self.start_step)
                 dash._progress.update(dash._task, completed=self.start_step)

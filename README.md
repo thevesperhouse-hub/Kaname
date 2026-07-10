@@ -61,6 +61,7 @@ configs/base.yaml      ~150M non-embedding, vocab 100k
 
 ```bash
 # venv already at .venv (torch cu128 for Blackwell / RTX 50xx)
+.venv/Scripts/python scripts/studio.py             # interactive launcher: pick size/steps/dataset
 .venv/Scripts/python scripts/smoke_test.py         # CPU sanity + causality proof
 .venv/Scripts/python scripts/preview_dashboard.py  # live TUI demo (synthetic data)
 

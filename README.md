@@ -102,8 +102,10 @@ follow-up (the streaming dataset is already rank/worker shard-aware).
 
 ## Performance
 
-Attention uses `F.scaled_dot_product_attention` (FlashAttention / cuDNN on a Linux
-CUDA build; a fused fallback elsewhere) — not a hand-rolled softmax. Two more levers:
+Always on: `F.scaled_dot_product_attention` (FlashAttention / cuDNN on a Linux CUDA
+build) instead of a hand-rolled softmax; **chunked cross-entropy** over the 100k-vocab
+head (`ce_chunk`, never materializes the full tokens×vocab logits — big VRAM saving);
+TF32 matmuls + `cudnn.benchmark`; pinned-memory non-blocking H2D copies. Two more levers:
 
 - **`--compile`** (torch.compile): big win via kernel fusion. First steps are slow
   (compilation); because `seq_len` is fixed the memory only takes a few shapes, so it

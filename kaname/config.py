@@ -45,6 +45,10 @@ class KanameConfig:
     # ---- sequence ----
     max_seq_len: int = 8192
 
+    # ---- perf ----
+    ce_chunk: int = 2048   # chunk the vocab-100k cross-entropy over tokens (0 = full);
+                           # caps the giant logits tensor -> big VRAM saving
+
     @property
     def head_dim(self) -> int:
         return self.d_model // self.n_heads

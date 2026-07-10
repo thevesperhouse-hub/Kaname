@@ -34,6 +34,11 @@ class Trainer:
                  amp_dtype="bf16", use_velvet=True, run_name="kaname", tui=True,
                  log_every=1, num_workers=0, ckpt_dir="outputs", save_every=0,
                  keep_last_n=3, resume=None, grad_checkpoint=False, compile=False):
+        if device.startswith("cuda"):
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            torch.backends.cudnn.benchmark = True          # fixed shapes -> pick fast kernels
+            torch.set_float32_matmul_precision("high")     # TF32 for any fp32 matmuls
         self.model = model.to(device)
         if grad_checkpoint:
             self.model.set_grad_checkpoint(True)
@@ -56,6 +61,7 @@ class Trainer:
         self.loader = DataLoader(
             train_ds, batch_size=batch_size, shuffle=not is_iter, drop_last=True,
             num_workers=num_workers, persistent_workers=num_workers > 0,
+            pin_memory=device.startswith("cuda"),
         )
         self.opt = VelvetOptimizer(
             self.model.parameters(), lr=lr, betas=betas, weight_decay=weight_decay,
@@ -130,7 +136,8 @@ class Trainer:
                     loss_acc, ce_acc, last = 0.0, 0.0, None
                     for _ in range(self.grad_accum):
                         xb, yb = next(gen)
-                        xb, yb = xb.to(self.device), yb.to(self.device)
+                        xb = xb.to(self.device, non_blocking=True)
+                        yb = yb.to(self.device, non_blocking=True)
                         if self.use_amp:
                             with torch.autocast("cuda", dtype=self.amp_dtype):
                                 out = self.model.lm_loss(xb, yb, compress_scale=cscale)

@@ -63,7 +63,8 @@ class Kaname(nn.Module):
             self._rope = RotaryCache(self.cfg.head_dim, self.W, self.cfg.rope_theta, device, dtype)
         return self._rope
 
-    def forward(self, input_ids: torch.Tensor, detach_memory: bool = False) -> dict:
+    def forward(self, input_ids: torch.Tensor, detach_memory: bool = False,
+                return_hidden: bool = False) -> dict:
         B, L = input_ids.shape
         W = self.W
         device = input_ids.device
@@ -109,7 +110,6 @@ class Kaname(nn.Module):
             mem_gate = new_gate.detach() if detach_memory else new_gate
 
         h_full = torch.cat(outs, dim=1)[:, :L, :]
-        logits = self.lm_head(h_full)
 
         route_w = torch.cat(route_w_list, dim=0)                     # (B*n_seg, 3)
         route_l = torch.cat(route_l_list, dim=0)
@@ -124,19 +124,38 @@ class Kaname(nn.Module):
             "compression_ratio": (W / eff_slots.clamp(min=1e-3)).detach(),
             "router_tau": self.router.tau,
         }
-        return {"logits": logits, "aux": aux, "stats": stats}
+        result = {"aux": aux, "stats": stats}
+        if return_hidden:
+            result["hidden"] = h_full        # loss path fuses lm_head into chunked CE
+        else:
+            result["logits"] = self.lm_head(h_full)
+        return result
+
+    def _cross_entropy(self, hidden: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """Chunked cross-entropy over the tied 100k head: never materializes the full
+        (tokens x vocab) logits tensor, only one chunk at a time."""
+        D = hidden.size(-1)
+        hf = hidden.reshape(-1, D)
+        tf = targets.reshape(-1)
+        Wt = self.lm_head.weight
+        chunk = self.cfg.ce_chunk
+        if not chunk or chunk >= hf.size(0):
+            return F.cross_entropy(F.linear(hf, Wt), tf, ignore_index=-100)
+        total = hf.new_zeros(())
+        count = tf.new_zeros(())
+        for i in range(0, hf.size(0), chunk):
+            lo = F.linear(hf[i:i + chunk], Wt)
+            total = total + F.cross_entropy(lo, tf[i:i + chunk], ignore_index=-100, reduction="sum")
+            count = count + (tf[i:i + chunk] != -100).sum()
+        return total / count.clamp(min=1)
 
     def lm_loss(self, input_ids: torch.Tensor, targets: torch.Tensor,
                 detach_memory: bool = False, compress_scale: float = 1.0) -> dict:
         """`compress_scale` in [0,1] ramps the compression pressure (see trainer warmup):
         early on it's ~0 so the router first learns to USE memory, then it rises so the
         model is rewarded for compressing what it safely can."""
-        out = self.forward(input_ids, detach_memory=detach_memory)
-        logits = out["logits"]
-        ce = F.cross_entropy(
-            logits.reshape(-1, logits.size(-1)), targets.reshape(-1),
-            ignore_index=-100,
-        )
+        out = self.forward(input_ids, detach_memory=detach_memory, return_hidden=True)
+        ce = self._cross_entropy(out.pop("hidden"), targets)
         aux = out["aux"]
         c = self.cfg
         total = (ce

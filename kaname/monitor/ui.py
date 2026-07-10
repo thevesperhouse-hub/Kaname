@@ -8,6 +8,7 @@ import subprocess
 import pyfiglet
 from rich.text import Text
 from rich.panel import Panel
+from rich.align import Align
 from rich import box
 
 
@@ -43,10 +44,14 @@ def gradient(text: str, start=C.light, end=C.deep) -> Text:
     return t
 
 
-def banner(word: str = "KANAME") -> Text:
+def banner(word: str = "KANAME"):
+    """Gradient pixel-art logo. Returns an Align-centered renderable — the art stays
+    LEFT-aligned internally (so the letters don't shear) while the whole block is
+    centered. Do NOT use Text justify='center' here: rich strips per-line trailing
+    spaces, which staggers the rows and mangles the word."""
     art = pyfiglet.figlet_format(word, font="ansi_regular").rstrip("\n").split("\n")
     width = max(len(l) for l in art)
-    out = Text(justify="center")
+    out = Text()
     for r, line in enumerate(art):
         line = line.ljust(width)
         # vertical gradient (light at top -> deep at bottom), like the SOMA logo
@@ -54,8 +59,9 @@ def banner(word: str = "KANAME") -> Text:
         col_bot = _lerp(C.mint, C.deep, r / max(len(art) - 1, 1))
         for c, ch in enumerate(line):
             out.append(ch, style=_lerp(col_top, col_bot, c / width))
-        out.append("\n")
-    return out
+        if r < len(art) - 1:
+            out.append("\n")
+    return Align.center(out)
 
 
 def bar(frac: float, width: int = 18, fill=C.mint, track=C.faint) -> Text:

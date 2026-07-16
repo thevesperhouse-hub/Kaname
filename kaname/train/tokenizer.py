@@ -12,14 +12,18 @@ import glob
 
 
 class Tokenizer:
-    def __init__(self, encode_fn, eos_id: int, vocab_size: int, name: str):
+    def __init__(self, encode_fn, decode_fn, eos_id: int, vocab_size: int, name: str):
         self._encode = encode_fn
+        self._decode = decode_fn
         self.eos_id = eos_id
         self.vocab_size = vocab_size
         self.name = name
 
     def encode(self, text: str):
         return self._encode(text)
+
+    def decode(self, ids):
+        return self._decode(list(ids))
 
 
 def load_tokenizer(source: str, hf_token: str = None) -> Tokenizer:
@@ -33,6 +37,7 @@ def load_tokenizer(source: str, hf_token: str = None) -> Tokenizer:
             eos = tok.pad_token_id if tok.pad_token_id is not None else tok.vocab_size - 1
         return Tokenizer(
             lambda t: tok.encode(t, add_special_tokens=False),
+            lambda ids: tok.decode(ids, skip_special_tokens=True),
             int(eos), int(tok.vocab_size), f"hf:{source}",
         )
     except Exception as e:
@@ -47,6 +52,7 @@ def load_tokenizer(source: str, hf_token: str = None) -> Tokenizer:
             eos = sp.eos_id() if sp.eos_id() >= 0 else sp.get_piece_size() - 1
             return Tokenizer(
                 lambda t: sp.encode(t, out_type=int),
+                lambda ids: sp.decode(ids),
                 int(eos), int(sp.get_piece_size()), f"spm:{models[0]}",
             )
     raise RuntimeError(f"Could not load tokenizer from '{source}': {auto_err}")

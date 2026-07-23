@@ -121,17 +121,19 @@ class Kaname(nn.Module):
         aux = acr_losses(route_w, route_l, gates, self.cfg)
 
         eff_slots = gates.sum(-1).mean()                            # avg slots kept / segment
-        stats = {
+        stats = {                                                  # scalar dashboard metrics only
             "route_dist": route_w.mean(0).detach(),                # (3,)
             "eff_slots": eff_slots.detach(),
             "mem_slots": float(memory.shape[1]) if memory is not None else 0.0,
             "compression_ratio": (W / eff_slots.clamp(min=1e-3)).detach(),
             "router_tau": self.router.tau,
+        }
+        result = {
+            "aux": aux, "stats": stats,
             # per-segment routing, for analysis: (B, n_seg, 3) and (B, n_seg)
             "seg_routes": torch.stack(route_w_list, dim=1).detach(),
             "seg_write_priority": torch.stack(wp_list, dim=1).detach(),
         }
-        result = {"aux": aux, "stats": stats}
         if return_hidden:
             result["hidden"] = h_full        # loss path fuses lm_head into chunked CE
         else:

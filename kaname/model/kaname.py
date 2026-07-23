@@ -82,7 +82,7 @@ class Kaname(nn.Module):
         memory = None          # (B, M, D)
         mem_gate = None        # (B, M)
         outs = []
-        route_w_list, route_l_list, gate_list = [], [], []
+        route_w_list, route_l_list, gate_list, wp_list = [], [], [], []
 
         for i in range(n_seg):
             seg = x_all[:, i * W:(i + 1) * W, :]
@@ -94,7 +94,7 @@ class Kaname(nn.Module):
                 h = self.backbone(seg, cos, sin, memory=mem_in, mem_gate=gate_in)
             outs.append(h)
 
-            route_logits, _wp = self.scanner(h)
+            route_logits, wp = self.scanner(h)
             route_w = self.router(route_logits)
             gate = slot_gates(route_w, self.cfg)                     # (B, k_max)
             slots = self.compressor(h)                               # (B, k_max, D)
@@ -102,6 +102,7 @@ class Kaname(nn.Module):
             route_w_list.append(route_w)
             route_l_list.append(route_logits)
             gate_list.append(gate)
+            wp_list.append(wp)
 
             new_mem = slots if memory is None else torch.cat([memory, slots], dim=1)
             new_gate = gate if mem_gate is None else torch.cat([mem_gate, gate], dim=1)
@@ -126,6 +127,9 @@ class Kaname(nn.Module):
             "mem_slots": float(memory.shape[1]) if memory is not None else 0.0,
             "compression_ratio": (W / eff_slots.clamp(min=1e-3)).detach(),
             "router_tau": self.router.tau,
+            # per-segment routing, for analysis: (B, n_seg, 3) and (B, n_seg)
+            "seg_routes": torch.stack(route_w_list, dim=1).detach(),
+            "seg_write_priority": torch.stack(wp_list, dim=1).detach(),
         }
         result = {"aux": aux, "stats": stats}
         if return_hidden:

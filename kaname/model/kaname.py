@@ -64,7 +64,9 @@ class Kaname(nn.Module):
         return self._rope
 
     def forward(self, input_ids: torch.Tensor, detach_memory: bool = False,
-                return_hidden: bool = False) -> dict:
+                return_hidden: bool = False, use_memory: bool = True) -> dict:
+        """use_memory=False withholds the compressed past from attention (each segment
+        only sees its own local window) — the ablation that isolates the memory's value."""
         B, L = input_ids.shape
         W = self.W
         device = input_ids.device
@@ -84,11 +86,12 @@ class Kaname(nn.Module):
 
         for i in range(n_seg):
             seg = x_all[:, i * W:(i + 1) * W, :]
+            mem_in, gate_in = (memory, mem_gate) if use_memory else (None, None)
             if self.grad_checkpoint and self.training:
-                h = checkpoint(self.backbone, seg, cos, sin, memory, mem_gate,
+                h = checkpoint(self.backbone, seg, cos, sin, mem_in, gate_in,
                                use_reentrant=False)
             else:
-                h = self.backbone(seg, cos, sin, memory=memory, mem_gate=mem_gate)
+                h = self.backbone(seg, cos, sin, memory=mem_in, mem_gate=gate_in)
             outs.append(h)
 
             route_logits, _wp = self.scanner(h)

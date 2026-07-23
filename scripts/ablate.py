@@ -48,6 +48,7 @@ def main():
     ap.add_argument("--tokenizer", default=DEFAULT_TOK)
     ap.add_argument("--eval-len", type=int, default=4096)
     ap.add_argument("--docs", type=int, default=100)
+    ap.add_argument("--plot", default=None, help="save a PNG figure to this path")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
 
@@ -94,24 +95,52 @@ def main():
     bpb_on = nats_on / (LN2 * n_bytes)
     bpb_off = nats_off / (LN2 * n_bytes)
 
+    valid = [s for s in range(n_seg) if seg_cnt[s] > 0]
+    on_c = [seg_on[s] / seg_cnt[s] for s in valid]
+    off_c = [seg_off[s] / seg_cnt[s] for s in valid]
+    gap_c = [off_c[i] - on_c[i] for i in range(len(valid))]
+
     print(f"{'segment':>8} {'CE on':>9} {'CE off':>9} {'gap(off-on)':>12}")
-    for s in range(n_seg):
-        if seg_cnt[s] == 0:
-            continue
-        on, off = seg_on[s] / seg_cnt[s], seg_off[s] / seg_cnt[s]
-        print(f"{s:>8} {on:>9.4f} {off:>9.4f} {off-on:>12.4f}")
+    for i, s in enumerate(valid):
+        print(f"{s:>8} {on_c[i]:>9.4f} {off_c[i]:>9.4f} {gap_c[i]:>12.4f}")
 
     print(f"\noverall  CE on {ce_on_all:.4f} | off {ce_off_all:.4f} | "
           f"ppl on {math.exp(ce_on_all):.2f}")
     print(f"BPB      on {bpb_on:.4f} | off {bpb_off:.4f}   (tokenizer-independent)")
-    rel = 100 * (ce_off_all - ce_on_all) / ce_off_all
-    print(f"\nMemory reduces overall CE by {rel:.1f}%.")
-    late = n_seg - 1
-    if seg_cnt[late] > 0 and seg_cnt[0] > 0:
-        g0 = (seg_off[0] - seg_on[0]) / seg_cnt[0]
-        gl = (seg_off[late] - seg_on[late]) / seg_cnt[late]
-        print(f"Gap grows from {g0:.4f} (segment 0) to {gl:.4f} (segment {late}) "
-              f"-> {'memory helps MORE with more context (YES)' if gl > g0 else 'gap does not grow'}")
+    print(f"Memory reduces overall CE by {100*(ce_off_all-ce_on_all)/ce_off_all:.1f}%.")
+
+    # honest verdict: where does the gap peak, and does it hold beyond training length?
+    train_seg = cfg.max_seq_len // W                       # segments seen during training
+    peak_i = max(range(len(valid)), key=lambda i: gap_c[i])
+    print(f"\nGap peaks at segment {valid[peak_i]} ({gap_c[peak_i]:.4f} nats/token). "
+          f"Training length = {cfg.max_seq_len} tokens ({train_seg} segments).")
+    beyond = [gap_c[i] for i, s in enumerate(valid) if s >= train_seg]
+    within = [gap_c[i] for i, s in enumerate(valid) if 0 < s < train_seg]
+    if beyond and within:
+        w, b = sum(within) / len(within), sum(beyond) / len(beyond)
+        print(f"mean gap within training length: {w:.4f} | beyond: {b:.4f}  "
+              f"-> {'SUSTAINED beyond training (unlimited-context signal)' if b >= 0.9*w else 'DECAYS beyond training (train longer to extend it)'}")
+
+    if args.plot:
+        _plot(valid, on_c, off_c, gap_c, train_seg, args.eval_len, args.plot)
+        print(f"\nfigure saved: {args.plot}")
+
+
+def _plot(seg, on, off, gap, train_seg, eval_len, path):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4))
+    a1.plot(seg, off, "o-", color="#f87171", label="memory OFF")
+    a1.plot(seg, on, "o-", color="#2dd4bf", label="memory ON")
+    a1.set_xlabel("segment (context depth, x512 tokens)"); a1.set_ylabel("CE (nats/token)")
+    a1.set_title("Next-token CE by context depth"); a1.legend(); a1.grid(alpha=.3)
+    a2.plot(seg, gap, "o-", color="#0d9488")
+    a2.axvline(train_seg, ls="--", color="gray", label=f"train length ({train_seg} seg)")
+    a2.set_xlabel("segment (context depth)"); a2.set_ylabel("CE reduction from memory (nats/token)")
+    a2.set_title("Value of compressed memory vs context"); a2.legend(); a2.grid(alpha=.3)
+    fig.suptitle(f"Kaname memory ablation — eval_len {eval_len}")
+    fig.tight_layout(); fig.savefig(path, dpi=130)
 
 
 if __name__ == "__main__":
